@@ -9,7 +9,7 @@ from sentence_transformers import SentenceTransformer
 import os
 API_KEY = st.secrets.get("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY") 
 
-API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={API_KEY}"
 
 # ------------------ LOAD DB & MODEL ------------------
 db = lancedb.connect("data")
