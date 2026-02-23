@@ -1,59 +1,101 @@
+import streamlit as st
+from dotenv import load_dotenv
+load_dotenv()
+
+import requests
+import lancedb
+from sentence_transformers import SentenceTransformer
+import os
+
+# ------------------ LOAD PERPLEXITY API KEY ------------------
+
+try:
+    API_KEY = st.secrets.get("PERPLEXITY_API_KEY")
+except:
+    API_KEY = None
+
+if not API_KEY:
+    API_KEY = os.getenv("PERPLEXITY_API_KEY")
+
+PERPLEXITY_API_URL = "https://api.perplexity.ai/chat/completions"
+
+# ------------------ LOAD DB & MODEL ------------------
+
+db = lancedb.connect("data")
+table = db.open_table("college_data")
+embed_model = SentenceTransformer("all-MiniLM-L6-v2")
+
+# ------------------ MAIN FUNCTION ------------------
+
 def ask_question(question):
-    if not API_KEY:
-        return "❌ No Perplexity API key found. Please add PERPLEXITY_API_KEY to .env or Streamlit secrets."
-    
-    # 🔎 Generate embedding & context (same as before)
-    query_embedding = embed_model.encode(question, normalize_embeddings=True).tolist()
+
+    # 🔎 Generate embedding
+    query_embedding = embed_model.encode(
+        question,
+        normalize_embeddings=True
+    ).tolist()
+
+    # 🔎 Retrieve relevant context
     results = table.search(query_embedding).limit(4).to_list()
     context = "\n".join([r["text"] for r in results])
 
-    # 🧠 Clean, working prompt
-    prompt = f"""You are [Mithra], a multilingual voice assistant built by Abhishek T (CSE Batch 2022-2026, LBS College of Engineering, Kasaragod, Kerala) for an AI college project.
+    # 🧠 Prompt
+    prompt = f"""
+You are an AI-powered College Assistant designed to help students, parents, and visitors with college-related queries.
 
-Answer this college question using ONLY the provided context:
+Your responsibilities:
+- Answer all college-related questions clearly and accurately.
+- Provide complete and helpful responses.
+- Maintain a polite, humble, and professional tone.
+- Sound natural and human-like in your responses.
+- If the question is unclear, politely ask for clarification.
 
-CONTEXT:
+Language Rules:
+- If the user asks in English, respond in English.
+- If the user asks in Malayalam, respond fully in Malayalam.
+- Do not mix languages unless necessary.
+
+Behavior Guidelines:
+- Be respectful and friendly.
+- Provide structured and easy-to-understand answers.
+- If the information is not available, politely inform the user instead of guessing.
+- If required, guide the user to contact the appropriate department.
+
+ownership:
+- You are [Mithra], a multilingual voice assistant built by Abhishek T for LBS College, kasaragod, Kerala. 
+- When asked who built you, who owns you, your creators, or similar: Always respond exactly: "I was built by Abhishek T(CSE Batch 2022-2026, LBS College of Engineering, Kasaragod, Kerala) for an AI college project."
+- Do not mention other companies, teams, or vague terms like 'xAI' or 'Perplexity' unless specifically about their APIs.
+- Keep responses friendly, concise, and on-topic.
+
+You represent the college officially, so always maintain professionalism and positivity.
+
+Context:
 {context}
 
-QUESTION: {question}
+Question:
+{question}
 
-Answer concisely and naturally:"""
+Answer:
+"""
 
     headers = {
         "Authorization": f"Bearer {API_KEY}",
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"  # ✅ FIX: Prevents bot detection
+        "Content-Type": "application/json"
     }
 
     payload = {
-        "model": "llama-3.1-sonar-small-128k-online",  # ✅ CORRECT Perplexity model (sonar-pro doesn't exist)
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.3,
-        "max_tokens": 1000
+        "model": "sonar-pro",   # Recommended Perplexity model
+        "messages": [
+            {"role": "system", "content": "You are a professional college assistant."},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.3
     }
 
-    try:
-        response = requests.post(PERPLEXITY_API_URL, headers=headers, json=payload, timeout=30)
-        
-        # ✅ CRITICAL: Check raw response FIRST (before any .json())
-        st.info(f"🔍 Status: {response.status_code}")
-        st.info(f"🔍 Response preview: {response.text[:300]}...")
-        
-        if response.status_code != 200:
-            return f"❌ API Error {response.status_code}\n{response.text[:200]}"
-        
-        # ✅ Only parse JSON if status is 200 AND response has content
-        if not response.text.strip():
-            return "❌ Empty response from API"
-            
-        response_json = response.json()
-        
-        if "choices" in response_json and response_json["choices"]:
-            return response_json["choices"][0]["message"]["content"]
-        else:
-            return f"❌ Unexpected format: {response_json}"
-            
-    except requests.exceptions.Timeout:
-        return "⏰ API timeout - try again"
-    except Exception as e:
-        return f"❌ Error: {str(e)}\nResponse: {response.text[:200] if 'response' in locals() else 'No response'}"
+    response = requests.post(PERPLEXITY_API_URL, headers=headers, json=payload)
+    response_json = response.json()
+
+    if "choices" in response_json:
+        return response_json["choices"][0]["message"]["content"]
+    else:
+        return f"Error: {response_json}"
